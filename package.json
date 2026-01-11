@@ -1,0 +1,48 @@
+{
+  "name": "mcp-android-emulator",
+  "version": "1.0.0",
+  "description": "MCP Server for Android Emulator interaction via ADB - enables AI assistants to control Android devices",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "mcp-android-emulator": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "android",
+    "emulator",
+    "adb",
+    "automation",
+    "testing",
+    "claude",
+    "ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Anjos2/mcp-android-emulator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Anjos2/mcp-android-emulator/issues"
+  },
+  "homepage": "https://github.com/Anjos2/mcp-android-emulator#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
