@@ -587,6 +587,170 @@ server.tool(
   }
 );
 
+// =====================================================
+// TOOL: long_press
+// =====================================================
+server.tool(
+  "long_press",
+  "Perform a long press at the specified coordinates (useful for context menus)",
+  {
+    x: z.number().describe("X coordinate"),
+    y: z.number().describe("Y coordinate"),
+    duration: z.number().optional().describe("Duration in milliseconds (default: 1000)"),
+  },
+  async ({ x, y, duration = 1000 }) => {
+    // Long press is simulated with a swipe to the same position
+    await shell(`input swipe ${x} ${y} ${x} ${y} ${duration}`);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Long pressed at (${x}, ${y}) for ${duration}ms`,
+        },
+      ],
+    };
+  }
+);
+
+// =====================================================
+// TOOL: clear_input
+// =====================================================
+server.tool(
+  "clear_input",
+  "Clear the currently focused text input field",
+  {
+    maxChars: z.number().optional().describe("Maximum characters to delete (default: 100)"),
+  },
+  async ({ maxChars = 100 }) => {
+    // Move cursor to end, then delete all characters
+    // KEYCODE_MOVE_END = 123, KEYCODE_DEL = 67
+    await shell("input keyevent 123"); // Move to end
+
+    // Delete characters one by one
+    for (let i = 0; i < maxChars; i++) {
+      await shell("input keyevent 67"); // Delete
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Cleared input field (deleted up to ${maxChars} characters)`,
+        },
+      ],
+    };
+  }
+);
+
+// =====================================================
+// TOOL: select_all
+// =====================================================
+server.tool(
+  "select_all",
+  "Select all text in the currently focused input field",
+  {},
+  async () => {
+    // CTRL+A = KEYCODE_CTRL_LEFT (113) + KEYCODE_A (29)
+    // Using input keyevent with --longpress for modifier keys
+    await shell("input keyevent --longpress 113 29");
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: "Selected all text in focused field",
+        },
+      ],
+    };
+  }
+);
+
+// =====================================================
+// TOOL: set_text
+// =====================================================
+server.tool(
+  "set_text",
+  "Clear the current input field and type new text (combines clear + type)",
+  {
+    text: z.string().describe("Text to type after clearing"),
+    maxClearChars: z.number().optional().describe("Maximum characters to clear (default: 100)"),
+  },
+  async ({ text, maxClearChars = 100 }) => {
+    // First clear the field
+    await shell("input keyevent 123"); // Move to end
+    for (let i = 0; i < maxClearChars; i++) {
+      await shell("input keyevent 67"); // Delete
+    }
+
+    // Then type new text
+    const escaped = text.replace(/ /g, "%s").replace(/'/g, "\\'");
+    await shell(`input text "${escaped}"`);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Cleared field and typed: "${text}"`,
+        },
+      ],
+    };
+  }
+);
+
+// =====================================================
+// TOOL: drag
+// =====================================================
+server.tool(
+  "drag",
+  "Perform a drag gesture from one point to another (slower than swipe, for drag & drop)",
+  {
+    x1: z.number().describe("Starting X coordinate"),
+    y1: z.number().describe("Starting Y coordinate"),
+    x2: z.number().describe("Ending X coordinate"),
+    y2: z.number().describe("Ending Y coordinate"),
+    duration: z.number().optional().describe("Duration in milliseconds (default: 1000)"),
+  },
+  async ({ x1, y1, x2, y2, duration = 1000 }) => {
+    await shell(`input swipe ${x1} ${y1} ${x2} ${y2} ${duration}`);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Dragged from (${x1}, ${y1}) to (${x2}, ${y2}) over ${duration}ms`,
+        },
+      ],
+    };
+  }
+);
+
+// =====================================================
+// TOOL: double_tap
+// =====================================================
+server.tool(
+  "double_tap",
+  "Perform a double tap at the specified coordinates",
+  {
+    x: z.number().describe("X coordinate"),
+    y: z.number().describe("Y coordinate"),
+  },
+  async ({ x, y }) => {
+    await shell(`input tap ${x} ${y}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await shell(`input tap ${x} ${y}`);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Double tapped at (${x}, ${y})`,
+        },
+      ],
+    };
+  }
+);
+
 // Start server
 async function main() {
   const transport = new StdioServerTransport();

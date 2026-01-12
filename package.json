@@ -1,6 +1,6 @@
 {
   "name": "mcp-android-emulator",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP Server for Android Emulator interaction via ADB - enables AI assistants to control Android devices",
   "type": "module",
   "main": "dist/index.js",

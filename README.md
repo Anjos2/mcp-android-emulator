@@ -104,9 +104,12 @@ Add to `claude_desktop_config.json`:
 | `get_ui_tree` | Get UI element hierarchy with coordinates |
 | `tap` | Tap at specific coordinates |
 | `tap_text` | Find element by text and tap it |
+| `double_tap` | Double tap at specific coordinates |
+| `long_press` | Long press for context menus |
 | `type_text` | Type text into focused input |
 | `swipe` | Swipe between two points |
 | `scroll` | Scroll in a direction (up/down/left/right) |
+| `drag` | Drag gesture for drag & drop operations |
 | `press_key` | Press system key (BACK, HOME, ENTER, etc.) |
 
 ### App Management
@@ -126,6 +129,14 @@ Add to `claude_desktop_config.json`:
 | `device_info` | Get device model, Android version, screen size |
 | `get_logs` | Get logcat logs with optional filters |
 | `get_current_activity` | Get currently focused activity |
+
+### Text Input
+
+| Tool | Description |
+|------|-------------|
+| `clear_input` | Clear currently focused text field |
+| `select_all` | Select all text in focused field |
+| `set_text` | Clear field and type new text (combines clear + type) |
 
 ### Utilities
 
