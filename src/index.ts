@@ -47,7 +47,7 @@ async function shell(command: string): Promise<string> {
 // Create MCP server
 const server = new McpServer({
   name: "android-emulator",
-  version: "1.2.2",
+  version: "1.2.3",
 });
 
 // =====================================================
