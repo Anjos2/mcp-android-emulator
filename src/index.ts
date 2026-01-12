@@ -47,7 +47,7 @@ async function shell(command: string): Promise<string> {
 // Create MCP server
 const server = new McpServer({
   name: "android-emulator",
-  version: "1.2.0",
+  version: "1.2.1",
 });
 
 // =====================================================
@@ -1189,14 +1189,38 @@ server.tool(
     text: z.string().describe("Text to copy to clipboard"),
   },
   async ({ text }) => {
-    // Use am broadcast to set clipboard content
-    const escaped = text.replace(/'/g, "'\\''");
-    await shell(`am broadcast -a clipper.set -e text '${escaped}'`);
-
-    // Alternative method using service call (works on more devices)
-    // This is a fallback approach
     const base64Text = Buffer.from(text).toString("base64");
-    await shell(`echo "${base64Text}" | base64 -d > /sdcard/clipboard_temp.txt`);
+
+    // Try multiple paths for compatibility (standard emulators vs Redroid/Docker)
+    const paths = ["/data/local/tmp/clipboard_temp.txt", "/sdcard/clipboard_temp.txt"];
+    let success = false;
+    let usedPath = "";
+
+    for (const clipPath of paths) {
+      try {
+        await shell(`echo "${base64Text}" | base64 -d > ${clipPath}`);
+        // Verify write succeeded
+        const verify = await shell(`cat ${clipPath} 2>/dev/null | head -c 10`);
+        if (verify.length > 0) {
+          success = true;
+          usedPath = clipPath;
+          break;
+        }
+      } catch {
+        // Try next path
+      }
+    }
+
+    if (!success) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: Could not write clipboard. Tried paths: ${paths.join(", ")}`,
+          },
+        ],
+      };
+    }
 
     return {
       content: [
@@ -1217,45 +1241,35 @@ server.tool(
   "Get the current device clipboard content",
   {},
   async () => {
-    try {
-      // Try to get clipboard via am broadcast
-      const result = await shell("am broadcast -a clipper.get");
-      const match = result.match(/data="([^"]*)"/);
-      if (match) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Clipboard content: "${match[1]}"`,
-            },
-          ],
-        };
+    // Try multiple paths for compatibility (standard emulators vs Redroid/Docker)
+    const paths = ["/data/local/tmp/clipboard_temp.txt", "/sdcard/clipboard_temp.txt"];
+
+    for (const clipPath of paths) {
+      try {
+        const content = await shell(`cat ${clipPath} 2>/dev/null`);
+        if (content && content.trim()) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Clipboard content: "${content}"`,
+              },
+            ],
+          };
+        }
+      } catch {
+        // Try next path
       }
-    } catch {
-      // Clipper app not installed, try alternative
     }
 
-    // Alternative: read from our temp file if set_clipboard was used
-    try {
-      const content = await shell("cat /sdcard/clipboard_temp.txt 2>/dev/null || echo ''");
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Clipboard content: "${content}"`,
-          },
-        ],
-      };
-    } catch {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Could not retrieve clipboard. Install Clipper app for full clipboard support.",
-          },
-        ],
-      };
-    }
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Clipboard content: ""`,
+        },
+      ],
+    };
   }
 );
 
