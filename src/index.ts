@@ -47,7 +47,7 @@ async function shell(command: string): Promise<string> {
 // Create MCP server
 const server = new McpServer({
   name: "android-emulator",
-  version: "1.2.1",
+  version: "1.2.2",
 });
 
 // =====================================================
@@ -1194,16 +1194,15 @@ server.tool(
     // Try multiple paths for compatibility (standard emulators vs Redroid/Docker)
     const paths = ["/data/local/tmp/clipboard_temp.txt", "/sdcard/clipboard_temp.txt"];
     let success = false;
-    let usedPath = "";
 
     for (const clipPath of paths) {
       try {
-        await shell(`echo "${base64Text}" | base64 -d > ${clipPath}`);
+        // Use single quotes to ensure the entire command runs on device (pipe included)
+        await shell(`'echo "${base64Text}" | base64 -d > ${clipPath}'`);
         // Verify write succeeded
-        const verify = await shell(`cat ${clipPath} 2>/dev/null | head -c 10`);
-        if (verify.length > 0) {
+        const verify = await shell(`cat ${clipPath} 2>/dev/null`);
+        if (verify && verify.length > 0) {
           success = true;
-          usedPath = clipPath;
           break;
         }
       } catch {
