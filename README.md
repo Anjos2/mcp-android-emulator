@@ -122,7 +122,7 @@ Add to `claude_desktop_config.json`:
 
 ---
 
-## Available Tools (39 tools)
+## Available Tools (40 tools)
 
 ### Screen Capture & UI
 
@@ -130,7 +130,8 @@ Add to `claude_desktop_config.json`:
 |------|-------------|
 | `screenshot` | Capture screen as base64 PNG image |
 | `get_ui_tree` | Get UI element hierarchy with coordinates |
-| `get_all_text` | **NEW** Get all visible text elements on screen (for debugging) |
+| `get_all_text` | Get all visible text elements on screen (for debugging) |
+| `get_clickable_elements` | **NEW** Get all clickable elements with text/id/coordinates (useful when tap_text fails) |
 | `get_screen_size` | Get screen dimensions and density |
 | `get_focused_element` | Get info about currently focused element |
 | `is_element_visible` | Check if element is visible on screen |
@@ -461,7 +462,11 @@ adb reverse --list
 
 ## Changelog
 
-### v1.3.0 (Latest)
+### v1.4.0 (Latest)
+- **New tools:**
+  - `get_clickable_elements` - Get all clickable elements with text, resource-id, class, and coordinates. Useful when `tap_text` fails to find an element.
+
+### v1.3.0
 - **New tools:**
   - `get_all_text` - Get all visible text elements on screen (useful for debugging)
   - `is_keyboard_visible` - Check if soft keyboard is currently visible

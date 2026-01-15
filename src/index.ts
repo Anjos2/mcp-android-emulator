@@ -47,7 +47,7 @@ async function shell(command: string): Promise<string> {
 // Create MCP server
 const server = new McpServer({
   name: "android-emulator",
-  version: "1.3.0",
+  version: "1.4.0",
 });
 
 // =====================================================
@@ -1655,6 +1655,85 @@ server.tool(
         {
           type: "text",
           text: `Found ${texts.length} text elements:\n${textList}`,
+        },
+      ],
+    };
+  }
+);
+
+// =====================================================
+// TOOL: get_clickable_elements
+// =====================================================
+server.tool(
+  "get_clickable_elements",
+  "Get all clickable elements on screen with their text, resource-id, and coordinates (useful when tap_text fails)",
+  {
+    includeDisabled: z.boolean().optional().describe("Include disabled elements (default: false)"),
+  },
+  async ({ includeDisabled = false }) => {
+    await shell("uiautomator dump /sdcard/ui_dump.xml");
+    const xml = await shell("cat /sdcard/ui_dump.xml");
+
+    const elements: Array<{
+      text: string;
+      resourceId: string;
+      className: string;
+      centerX: number;
+      centerY: number;
+      bounds: string;
+    }> = [];
+
+    // Match clickable elements with their attributes
+    const regex = /<node[^>]*clickable="true"[^>]*>/g;
+    let nodeMatch;
+
+    while ((nodeMatch = regex.exec(xml)) !== null) {
+      const node = nodeMatch[0];
+
+      // Skip disabled elements unless requested
+      if (!includeDisabled && node.includes('enabled="false"')) {
+        continue;
+      }
+
+      // Extract attributes
+      const textMatch = node.match(/text="([^"]*)"/);
+      const resourceIdMatch = node.match(/resource-id="([^"]*)"/);
+      const classMatch = node.match(/class="([^"]*)"/);
+      const boundsMatch = node.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
+
+      if (boundsMatch) {
+        const [, x1, y1, x2, y2] = boundsMatch;
+        const centerX = Math.round((parseInt(x1) + parseInt(x2)) / 2);
+        const centerY = Math.round((parseInt(y1) + parseInt(y2)) / 2);
+
+        elements.push({
+          text: textMatch ? textMatch[1] : "",
+          resourceId: resourceIdMatch ? resourceIdMatch[1] : "",
+          className: classMatch ? classMatch[1].split(".").pop() || "" : "",
+          centerX,
+          centerY,
+          bounds: `[${x1},${y1}][${x2},${y2}]`,
+        });
+      }
+    }
+
+    // Sort by Y position (top to bottom), then X (left to right)
+    elements.sort((a, b) => a.centerY - b.centerY || a.centerX - b.centerX);
+
+    // Format output
+    const formatted = elements.map((el, i) => {
+      const parts = [];
+      if (el.text) parts.push(`text="${el.text}"`);
+      if (el.resourceId) parts.push(`id="${el.resourceId.split("/").pop()}"`);
+      if (el.className) parts.push(`[${el.className}]`);
+      return `${i + 1}. ${parts.join(" ") || "(no text/id)"} at (${el.centerX}, ${el.centerY})`;
+    }).join("\n");
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Found ${elements.length} clickable elements:\n${formatted}`,
         },
       ],
     };
