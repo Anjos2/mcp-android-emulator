@@ -122,7 +122,7 @@ Add to `claude_desktop_config.json`:
 
 ---
 
-## Available Tools (36 tools)
+## Available Tools (39 tools)
 
 ### Screen Capture & UI
 
@@ -130,6 +130,7 @@ Add to `claude_desktop_config.json`:
 |------|-------------|
 | `screenshot` | Capture screen as base64 PNG image |
 | `get_ui_tree` | Get UI element hierarchy with coordinates |
+| `get_all_text` | **NEW** Get all visible text elements on screen (for debugging) |
 | `get_screen_size` | Get screen dimensions and density |
 | `get_focused_element` | Get info about currently focused element |
 | `is_element_visible` | Check if element is visible on screen |
@@ -161,6 +162,8 @@ Add to `claude_desktop_config.json`:
 | `clear_input` | Clear focused text field |
 | `select_all` | Select all text in focused field |
 | `set_text` | Clear and type new text (combines both) |
+| `get_focused_input_value` | **NEW** Get current text value of focused input |
+| `is_keyboard_visible` | **NEW** Check if soft keyboard is currently visible |
 
 ### System & Keys
 
@@ -458,7 +461,17 @@ adb reverse --list
 
 ## Changelog
 
-### v1.2.3 (Latest)
+### v1.3.0 (Latest)
+- **New tools:**
+  - `get_all_text` - Get all visible text elements on screen (useful for debugging)
+  - `is_keyboard_visible` - Check if soft keyboard is currently visible
+  - `get_focused_input_value` - Get current text value of focused input field
+- **Improvements:**
+  - `wait_for_ui_stable` - Now uses UI fingerprint instead of raw XML comparison (more reliable)
+  - `get_current_activity` - Multi-method approach for compatibility with different emulators (AVD, Redroid, Genymotion, etc.)
+  - `is_keyboard_visible` - Multiple detection methods with fallbacks
+
+### v1.2.3
 - Updated documentation with comprehensive setup guides
 - Added emulator comparison (AVD, Redroid, Genymotion, Physical)
 - Added cloud/VPS deployment instructions
