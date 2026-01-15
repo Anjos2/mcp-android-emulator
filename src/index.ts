@@ -47,7 +47,7 @@ async function shell(command: string): Promise<string> {
 // Create MCP server
 const server = new McpServer({
   name: "android-emulator",
-  version: "1.2.3",
+  version: "1.3.0",
 });
 
 // =====================================================
@@ -530,13 +530,48 @@ server.tool(
   "Get the currently focused activity/screen",
   {},
   async () => {
-    const result = await shell("dumpsys activity activities | grep mResumedActivity");
+    let activity = "Unknown";
+
+    // Try multiple methods for compatibility across emulators
+    try {
+      // Method 1: mResumedActivity (standard Android)
+      const result1 = await shell("dumpsys activity activities | grep -E 'mResumedActivity|mCurrentFocus' || true");
+      if (result1 && result1.trim()) {
+        activity = result1.trim();
+      }
+    } catch {
+      // Ignore
+    }
+
+    if (activity === "Unknown") {
+      try {
+        // Method 2: topActivity (alternative)
+        const result2 = await shell("dumpsys activity top | head -5 || true");
+        if (result2 && result2.trim()) {
+          activity = result2.trim();
+        }
+      } catch {
+        // Ignore
+      }
+    }
+
+    if (activity === "Unknown") {
+      try {
+        // Method 3: window focus (Redroid/Docker compatible)
+        const result3 = await shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' || true");
+        if (result3 && result3.trim()) {
+          activity = result3.trim();
+        }
+      } catch {
+        // Ignore
+      }
+    }
 
     return {
       content: [
         {
           type: "text",
-          text: `Current activity: ${result.trim()}`,
+          text: `Current activity:\n${activity}`,
         },
       ],
     };
@@ -1016,6 +1051,27 @@ server.tool(
 // =====================================================
 // TOOL: wait_for_ui_stable
 // =====================================================
+/**
+ * Extract a normalized fingerprint of UI elements from XML
+ * Only considers text, bounds, and class - ignores dynamic attributes
+ */
+function extractUIFingerprint(xml: string): string {
+  const elements: string[] = [];
+  // Match elements with text or class and bounds
+  const regex = /(?:text="([^"]*)")?[^>]*(?:class="([^"]*)")?[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/g;
+  let match;
+
+  while ((match = regex.exec(xml)) !== null) {
+    const [, text, className, x1, y1, x2, y2] = match;
+    // Only include elements with text or meaningful classes
+    if (text || className) {
+      elements.push(`${text || ""}|${className || ""}|${x1},${y1},${x2},${y2}`);
+    }
+  }
+
+  return elements.sort().join("\n");
+}
+
 server.tool(
   "wait_for_ui_stable",
   "Wait for the UI to stop changing (useful after animations)",
@@ -1025,28 +1081,30 @@ server.tool(
   },
   async ({ timeout = 5000, checkInterval = 500 }) => {
     const startTime = Date.now();
-    let lastXml = "";
+    let lastFingerprint = "";
     let stableCount = 0;
 
     while (Date.now() - startTime < timeout) {
       await shell("uiautomator dump /sdcard/ui_dump.xml");
       const currentXml = await shell("cat /sdcard/ui_dump.xml");
+      const currentFingerprint = extractUIFingerprint(currentXml);
 
-      if (currentXml === lastXml) {
+      if (currentFingerprint === lastFingerprint) {
         stableCount++;
         if (stableCount >= 2) {
+          const elapsed = Date.now() - startTime;
           return {
             content: [
               {
                 type: "text",
-                text: `UI stable after ${Math.round((Date.now() - startTime) / 1000)}s`,
+                text: `UI stable after ${elapsed < 1000 ? elapsed + "ms" : Math.round(elapsed / 1000) + "s"}`,
               },
             ],
           };
         }
       } else {
         stableCount = 0;
-        lastXml = currentXml;
+        lastFingerprint = currentFingerprint;
       }
 
       await new Promise((resolve) => setTimeout(resolve, checkInterval));
@@ -1552,6 +1610,193 @@ server.tool(
             assertion: found ? "PASS" : "FAIL",
             expected: text,
             found,
+          }, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// =====================================================
+// TOOL: get_all_text
+// =====================================================
+server.tool(
+  "get_all_text",
+  "Get all visible text elements on screen (useful for debugging and verification)",
+  {
+    includeEmpty: z.boolean().optional().describe("Include elements with empty text (default: false)"),
+  },
+  async ({ includeEmpty = false }) => {
+    await shell("uiautomator dump /sdcard/ui_dump.xml");
+    const xml = await shell("cat /sdcard/ui_dump.xml");
+
+    const texts: Array<{ text: string; centerX: number; centerY: number }> = [];
+    const regex = /text="([^"]*)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/g;
+    let match;
+
+    while ((match = regex.exec(xml)) !== null) {
+      const [, text, x1, y1, x2, y2] = match;
+      if (text || includeEmpty) {
+        texts.push({
+          text: text || "(empty)",
+          centerX: Math.round((parseInt(x1) + parseInt(x2)) / 2),
+          centerY: Math.round((parseInt(y1) + parseInt(y2)) / 2),
+        });
+      }
+    }
+
+    // Sort by Y position (top to bottom), then X (left to right)
+    texts.sort((a, b) => a.centerY - b.centerY || a.centerX - b.centerX);
+
+    const textList = texts.map((t) => `"${t.text}" at (${t.centerX}, ${t.centerY})`).join("\n");
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Found ${texts.length} text elements:\n${textList}`,
+        },
+      ],
+    };
+  }
+);
+
+// =====================================================
+// TOOL: is_keyboard_visible
+// =====================================================
+server.tool(
+  "is_keyboard_visible",
+  "Check if the soft keyboard is currently visible on screen",
+  {},
+  async () => {
+    let isShowingViaIme = false;
+    let hasKeyboardWindow = false;
+    let heightMethod = false;
+
+    // Method 1: Check InputMethod visibility via dumpsys
+    try {
+      const imeDump = await shell("dumpsys input_method | grep mInputShown || true");
+      isShowingViaIme = imeDump.includes("mInputShown=true");
+    } catch {
+      // Ignore errors
+    }
+
+    // Method 2: Check if keyboard window is visible
+    try {
+      const windowDump = await shell("dumpsys window windows | grep -i inputmethod || true");
+      hasKeyboardWindow = windowDump.toLowerCase().includes("inputmethod") &&
+                          windowDump.includes("mHasSurface=true");
+    } catch {
+      // Ignore errors
+    }
+
+    // Method 3: Check visible height vs screen height
+    try {
+      const visibleFrame = await shell("dumpsys window | grep 'mVisibleFrame' || true");
+      const sizeOutput = await shell("wm size");
+      const sizeMatch = sizeOutput.match(/(\d+)x(\d+)/);
+      if (sizeMatch && visibleFrame) {
+        const screenHeight = parseInt(sizeMatch[2]);
+        const frameMatch = visibleFrame.match(/mVisibleFrame=\[\d+,\d+\]\[\d+,(\d+)\]/);
+        if (frameMatch) {
+          const visibleHeight = parseInt(frameMatch[1]);
+          // If visible area is significantly less than screen, keyboard is likely shown
+          heightMethod = visibleHeight < screenHeight * 0.8;
+        }
+      }
+    } catch {
+      // Ignore height method errors
+    }
+
+    const isVisible = isShowingViaIme || hasKeyboardWindow || heightMethod;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            visible: isVisible,
+            checks: {
+              inputMethodShown: isShowingViaIme,
+              keyboardWindowVisible: hasKeyboardWindow,
+              heightReduced: heightMethod,
+            },
+          }, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// =====================================================
+// TOOL: get_focused_input_value
+// =====================================================
+server.tool(
+  "get_focused_input_value",
+  "Get the current text value of the focused input field",
+  {},
+  async () => {
+    await shell("uiautomator dump /sdcard/ui_dump.xml");
+    const xml = await shell("cat /sdcard/ui_dump.xml");
+
+    // Look for focused element that is an input field (EditText or similar)
+    // Pattern matches focused="true" along with text attribute
+    const patterns = [
+      // Pattern 1: focused before text
+      /class="[^"]*(?:Edit|Input|Text)[^"]*"[^>]*focused="true"[^>]*text="([^"]*)"/gi,
+      // Pattern 2: text before focused
+      /class="[^"]*(?:Edit|Input|Text)[^"]*"[^>]*text="([^"]*)"[^>]*focused="true"/gi,
+      // Pattern 3: Generic focused with text
+      /focused="true"[^>]*text="([^"]*)"[^>]*class="[^"]*(?:Edit|Input|Text)[^"]*"/gi,
+    ];
+
+    for (const pattern of patterns) {
+      const match = pattern.exec(xml);
+      if (match) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                found: true,
+                value: match[1],
+                isEmpty: match[1] === "",
+              }, null, 2),
+            },
+          ],
+        };
+      }
+    }
+
+    // Try broader search for any focused element with text
+    const broadPattern = /focused="true"[^>]*text="([^"]*)"|text="([^"]*)"[^>]*focused="true"/gi;
+    const broadMatch = broadPattern.exec(xml);
+
+    if (broadMatch) {
+      const value = broadMatch[1] || broadMatch[2] || "";
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              found: true,
+              value,
+              isEmpty: value === "",
+              note: "Found focused element (may not be an input field)",
+            }, null, 2),
+          },
+        ],
+      };
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            found: false,
+            value: null,
+            error: "No focused input field found",
           }, null, 2),
         },
       ],
