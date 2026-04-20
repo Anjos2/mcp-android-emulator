@@ -25,6 +25,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import {
@@ -171,16 +172,25 @@ server.tool(
 // =====================================================
 // TOOL: type_text
 // =====================================================
+/**
+ * Android `input text` interpreta %s como espacio y %XX como byte URL-encoded.
+ * Percent-encodear el UTF-8 del texto:
+ *   - soporta acentos, CJK, emoji (Android decodifica %XX internamente)
+ *   - evita el NPE conocido de `input text` con UTF-8 directo
+ *   - los metacaracteres shell ya fueron rechazados por typeableTextSchema
+ */
+function encodeTextForInput(text: string): string {
+  return encodeURIComponent(text).replace(/%20/g, "%s");
+}
+
 server.tool(
   "type_text",
-  "Type text into the currently focused input field. Allowlist: alphanumerics, spaces, and common punctuation (.,:/_-@+=?!#%*[]{}). Shell metacharacters are rejected.",
+  "Type text into the currently focused input field. Unicode is supported via URL-encoding. Shell metacharacters (; & | ` $ ( ) < > \\ quotes) are rejected.",
   {
-    text: typeableTextSchema.describe("Text to type (restricted character set for safety)"),
+    text: typeableTextSchema.describe("Text to type"),
   },
   async ({ text }) => {
-    // `input text` en Android trata espacios como separadores — usar %s.
-    const encoded = text.replace(/ /g, "%s");
-    await runAdbShell(["input", "text", encoded]);
+    await runAdbShell(["input", "text", encodeTextForInput(text)]);
     return { content: [{ type: "text", text: `Typed: "${text}"` }] };
   }
 );
@@ -546,7 +556,7 @@ server.tool(
 // =====================================================
 server.tool(
   "set_text",
-  "Clear the current input field and type new text. Allowlist: alphanumerics, spaces, and common punctuation (.,:/_-@+=?!#%*[]{}). Shell metacharacters are rejected.",
+  "Clear the current input field and type new text. Unicode is supported via URL-encoding. Shell metacharacters are rejected.",
   {
     text: typeableTextSchema.describe("Text to type after clearing"),
     maxClearChars: z.number().int().min(1).max(10_000).optional().describe("Maximum characters to clear (default: 100)"),
@@ -556,8 +566,7 @@ server.tool(
     for (let i = 0; i < maxClearChars; i++) {
       await runAdbShell(["input", "keyevent", "67"]);
     }
-    const encoded = text.replace(/ /g, "%s");
-    await runAdbShell(["input", "text", encoded]);
+    await runAdbShell(["input", "text", encodeTextForInput(text)]);
     return { content: [{ type: "text", text: `Cleared field and typed: "${text}"` }] };
   }
 );
@@ -952,38 +961,34 @@ server.tool(
 // =====================================================
 server.tool(
   "set_clipboard",
-  "Set text to the device clipboard. Text is written to a temp file on the device via stdin (no shell pipes).",
+  "Set text to the device clipboard. Text is transferred via `adb push` (binary transfer, no shell involvement, full Unicode support).",
   {
     text: freeTextSchema.describe("Text to copy to clipboard"),
   },
   async ({ text }) => {
     const paths = ["/data/local/tmp/clipboard_temp.txt", "/sdcard/clipboard_temp.txt"];
+
+    const tmpLocal = path.join(os.tmpdir(), `mcp-clipboard-${process.pid}-${Date.now()}.txt`);
+    fs.writeFileSync(tmpLocal, text, "utf8");
+
     let success = false;
     let usedPath = "";
-    const base64Text = Buffer.from(text, "utf8").toString("base64");
 
-    for (const clipPath of paths) {
-      try {
-        // Escribir el contenido en el device sin usar pipes shell:
-        // 1. `echo BASE64` (solo alfanuméricos, seguro) redirigido con > a un temp
-        // 2. `base64 -d` leyendo del archivo y escribiendo al path final
-        // Alternativa: usar `cmd clipboard set-text` directamente si disponible.
-        const tmpB64 = `${clipPath}.b64`;
-
-        // Paso 1: guardar base64 crudo (alfanumérico + '/' + '+' + '=', sin metachars)
-        await runAdbShell(["sh", "-c", `echo ${base64Text} > ${tmpB64}`]);
-        // Paso 2: decodificar
-        await runAdbShell(["sh", "-c", `base64 -d ${tmpB64} > ${clipPath}`]);
-        // Paso 3: limpiar el intermedio
-        await runAdbShell(["rm", "-f", tmpB64]);
-
-        const verify = await runAdbShell(["cat", clipPath]);
-        if (verify && verify.length > 0) {
-          success = true;
-          usedPath = clipPath;
-          break;
-        }
-      } catch { /* try next path */ }
+    try {
+      for (const clipPath of paths) {
+        try {
+          await runAdb(["push", tmpLocal, clipPath]);
+          // Verificar con cat (ruta fija, sin input de LLM)
+          const verify = await runAdbShell(["cat", clipPath]);
+          if (verify && verify.length > 0) {
+            success = true;
+            usedPath = clipPath;
+            break;
+          }
+        } catch { /* try next path */ }
+      }
+    } finally {
+      try { fs.unlinkSync(tmpLocal); } catch { /* ignore */ }
     }
 
     if (!success) {

@@ -16,21 +16,24 @@
 - New module `src/adb/runner.ts` — wraps `child_process.execFile` (not `exec`),
   so arguments are never re-parsed by `/bin/sh` on the host regardless of
   their contents.
-- New module `src/adb/validators.ts` — strict zod allowlists for every
-  LLM-controlled input: Android package names, APK paths, resource-ids,
-  typeable text, search filters, coordinates, and durations.
+- New module `src/adb/validators.ts` — strict zod validation for every
+  LLM-controlled input: Android package names (regex), APK paths, resource-ids,
+  typeable text (shell-metachar deny-list), search filters, coordinates,
+  and durations.
 - `list_packages` and `get_logs` no longer use shell pipes. Filtering is
   applied in JavaScript after collecting the full output from `adb shell`.
-- `type_text` and `set_text` now enforce an allowlist of alphanumerics,
-  spaces, and common punctuation (`.,:/_-@+=?!#%*[]{}`). Shell
-  metacharacters are rejected at the schema layer.
-- `set_clipboard` writes the payload via fully argv-separated shell
-  invocations; no user-controlled pipes.
+- `type_text` and `set_text` reject shell metacharacters
+  (`; & | \` $ ( ) < > \\ " '` and control chars). **Unicode is
+  supported** via internal URL-encoding (`niño` → `ni%C3%B1o`), which
+  Android's `input text` decodes natively. This avoids the known NPE
+  crash when `input text` receives raw UTF-8 bytes.
+- `set_clipboard` now transfers the text with `adb push` (binary transfer,
+  no shell involvement). Full Unicode support including emoji and CJK.
 - Dependencies are now pinned to exact versions (`npm audit` → 0
   vulnerabilities).
 - Version bumped to **2.0.0** — some inputs previously accepted are now
-  rejected by the stricter allowlists. Consumers relying on symbols
-  outside the allowlist must update their calls.
+  rejected by the stricter validation. Consumers relying on shell
+  metacharacters in text must update their calls.
 
 ### Added
 
@@ -48,9 +51,10 @@
   the Android spec (`^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$`
   for packages, `.apk` extension and no shell metacharacters for paths),
   those calls will now fail validation. Update them to the canonical form.
-- `type_text` / `set_text`: if you need to type characters outside the
-  current allowlist, file an issue describing the use case — we are open
-  to extending the allowlist once we understand the need.
+- `type_text` / `set_text`: Unicode (acentos, ñ, emoji, CJK) is fully
+  supported. Shell metacharacters (`; & | \` $ ( ) < > \\ " '`) and
+  control characters are rejected — if you had them in test inputs, they
+  will now return a validation error.
 
 ## 1.4.0
 

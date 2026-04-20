@@ -136,6 +136,28 @@ test("typeableTextSchema accepts common inputs", () => {
   }
 });
 
+test("typeableTextSchema accepts unicode/i18n text (acentos, ñ, emoji, CJK)", () => {
+  const valid = [
+    "niño",
+    "señor",
+    "contraseña",
+    "áéíóú ÁÉÍÓÚ",
+    "¿qué tal?",
+    "café",
+    "北京",
+    "こんにちは",
+    "Привет",
+    "hola 🚀 mundo",
+    "★ rating",
+    "résumé",
+    "naïve",
+    "Zürich",
+  ];
+  for (const t of valid) {
+    assert.equal(typeableTextSchema.safeParse(t).success, true, `should accept "${t}"`);
+  }
+});
+
 test("typeableTextSchema rejects shell-metachar payloads", () => {
   const bad = [
     "hello; id",

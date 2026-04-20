@@ -80,19 +80,20 @@ export const freeTextSchema = z
 
 // ---------------------------------------------------------------------------
 // Texto que se va a tipear en un input Android (type_text, set_text).
-// Este texto PASA por el shell del device (`input text ...`). Aplicamos
-// allowlist amplia (imprimible, espacios, algunos símbolos comunes) y
-// rechazamos metacaracteres shell. Es una limitación consciente —
-// casos de password con '$' o '`' deben enviar primero la parte segura
-// y usar key events para los metacaracteres, o una tool futura dedicada.
+// Este texto PASA por el shell del device (`input text ...`). Usamos DENY-list
+// (rechazar solo metacaracteres shell y caracteres de control), NO allow-list,
+// para no romper i18n: acentos, ñ, CJK y emoji son válidos en inputs reales
+// de aplicaciones. Mismo nivel de seguridad que una allow-list ASCII porque
+// los shell metachars son el único vector de inyección.
 // ---------------------------------------------------------------------------
-const TYPEABLE_TEXT_REGEX = /^[a-zA-Z0-9 .,:/_\-@+=?!#%*\[\]{}]*$/;
-
 export const typeableTextSchema = z
   .string()
   .min(0)
   .max(2048)
-  .regex(TYPEABLE_TEXT_REGEX, "Text contains characters not allowed for safe typing");
+  .refine((s) => !SHELL_METACHARS.test(s), {
+    message:
+      "Text contains shell metacharacters (; & | ` $ ( ) < > \\ \" ' or control chars). Use key events for these.",
+  });
 
 // ---------------------------------------------------------------------------
 // Filter para list_packages / get_logs — usado en JS, no en shell.
