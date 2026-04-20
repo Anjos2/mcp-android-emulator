@@ -3,3 +3,6 @@ dist/
 *.log
 .env
 .DS_Store
+
+# Project memory (contains credentials, never push)
+memoria/
