@@ -462,7 +462,20 @@ adb reverse --list
 
 ## Changelog
 
-### v1.4.0 (Latest)
+See [CHANGELOG.md](CHANGELOG.md) for the full history.
+
+### v2.0.0 (Latest) — Security release
+
+- **Eliminated command injection across the MCP tool surface** (issue #1).
+  The ADB execution layer was rebuilt on `child_process.execFile`, and every
+  LLM-controlled input now passes through strict zod allowlists before reaching
+  the device shell.
+- Dependencies pinned to exact versions (`npm audit` clean).
+- New `SECURITY.md` with responsible disclosure policy.
+- **Breaking:** stricter allowlists reject some inputs previously accepted.
+  See [CHANGELOG.md](CHANGELOG.md#200--2026-04-19) for migration notes.
+
+### v1.4.0
 - **New tools:**
   - `get_clickable_elements` - Get all clickable elements with text, resource-id, class, and coordinates. Useful when `tap_text` fails to find an element.
 
